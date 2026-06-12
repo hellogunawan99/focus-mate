@@ -35,3 +35,8 @@ ios/Flutter/flutter_export_environment.sh
 *.log
 *.pid
 *.pid.lock
+
+# Matrix MCP generated media (we only keep the curated WAV)
+matrix-media-*.mp3
+matrix-media-*.wav
+matrix-media-*.png
