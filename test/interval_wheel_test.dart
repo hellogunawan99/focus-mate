@@ -5,76 +5,90 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:focus_mate/widgets/interval_wheel.dart';
 
 void main() {
-  testWidgets('IntervalWheel initializes with the supplied value as centered',
+  testWidgets('IntervalWheel initializes with value 5 centered (no off-by-one)',
       (tester) async {
-    int? captured;
     await tester.pumpWidget(MaterialApp(
       home: Scaffold(
         body: IntervalWheel(
           value: 5,
-          onChanged: (v) => captured = v,
+          onChanged: (_) {},
         ),
       ),
     ));
-    // Let the post-frame callback fire.
     await tester.pumpAndSettle();
 
-    // The first item in the list is value 5; with the center-padding
-    // trick, the wheel's center should highlight the item with value 5.
-    final selectedFinder = find.text('5');
-    expect(selectedFinder, findsWidgets);
+    // With center-padding, the wheel's visible center should highlight
+    // value 5, not value 6.
+    final selectedFive = find.text('5');
+    expect(selectedFive, findsWidgets);
   });
 
-  testWidgets('IntervalWheel clamps editor input to editor range (1-240)',
+  testWidgets('IntervalWheel scrolls across full 1-240 range',
       (tester) async {
-    int? captured;
-    final wheel = IntervalWheel(
-      value: 30,
-      onChanged: (v) => captured = v,
-    );
+    final captured = <int>[];
     await tester.pumpWidget(MaterialApp(
-      home: Scaffold(body: wheel),
+      home: Scaffold(
+        body: IntervalWheel(
+          value: 60,
+          onChanged: (v) => captured.add(v),
+        ),
+      ),
     ));
     await tester.pumpAndSettle();
 
-    // Tap the edit button to open the dialog.
+    // Simulate scrolling the wheel to the very top (value 1).
+    final listFinder = find.byType(Scrollable);
+    expect(listFinder, findsWidgets);
+    await tester.drag(listFinder.first, const Offset(0, 5000));
+    await tester.pumpAndSettle();
+
+    // The wheel should have crossed value 1 somewhere in the drag.
+    expect(captured, contains(1));
+  });
+
+  testWidgets('IntervalWheel editor accepts any value 1-240',
+      (tester) async {
+    final captured = <int>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: IntervalWheel(
+          value: 30,
+          onChanged: (v) => captured.add(v),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // Open the editor via the pencil icon.
     await tester.tap(find.byIcon(Icons.edit_rounded));
     await tester.pumpAndSettle();
 
-    // The dialog should be open.
     expect(find.text('Custom interval'), findsOneWidget);
 
-    // Clear and type a value below wheel.min.
+    // Type a value within the editor range.
     await tester.enterText(find.byType(TextField), '3');
     await tester.tap(find.text('SET'));
     await tester.pumpAndSettle();
 
-    // The wheel should accept 3 even though wheel.min defaults to 5.
-    expect(captured, 3);
+    expect(captured.last, 3);
   });
 
-  testWidgets('IntervalWheel does not lose value on rebuild with out-of-range value',
+  testWidgets('IntervalWheel editor pre-fills with current value',
       (tester) async {
-    int? captured;
-    Widget buildWith(int value) => MaterialApp(
-          home: Scaffold(
-            body: IntervalWheel(
-              value: value,
-              onChanged: (v) => captured = v,
-            ),
-          ),
-        );
-
-    // Start with 3 (below default wheel.min of 5).
-    await tester.pumpWidget(buildWith(3));
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: IntervalWheel(
+          value: 47,
+          onChanged: (_) {},
+        ),
+      ),
+    ));
     await tester.pumpAndSettle();
 
-    // The big number above the wheel (rendered elsewhere) would show 3,
-    // but the wheel's internal _value should still be 3 (not clamped).
-    // Verify by tapping the edit button — pre-fill should be '3'.
     await tester.tap(find.byIcon(Icons.edit_rounded));
     await tester.pumpAndSettle();
+
     final textField = tester.widget<TextField>(find.byType(TextField));
-    expect(textField.controller!.text, '3');
+    expect(textField.controller!.text, '47');
   });
 }

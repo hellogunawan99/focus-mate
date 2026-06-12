@@ -26,8 +26,8 @@ class IntervalWheel extends StatefulWidget {
     super.key,
     required this.value,
     required this.onChanged,
-    this.min = 5,
-    this.max = 120,
+    this.min = 1,
+    this.max = 240,
     this.editorMin = 1,
     this.editorMax = 240,
   });
@@ -39,7 +39,15 @@ class IntervalWheel extends StatefulWidget {
 class _IntervalWheelState extends State<IntervalWheel> {
   late ScrollController _controller;
   late int _value;
-  final double _itemHeight = 44;
+  final double _itemHeight = 30;
+
+  /// Values rendered as "landmarks" — visually larger and bolder in the
+  /// wheel. These are the values most users actually want to land on
+  /// (every 5 min up to 30, then 45, 60, 90, 120, 180, 240). All other
+  /// values are still scrollable and selectable, but rendered smaller.
+  static const Set<int> _landmarks = {
+    1, 2, 3, 5, 10, 15, 20, 25, 30, 45, 60, 90, 120, 180, 240,
+  };
 
   /// One full "item" of empty space at top and bottom of the list. This
   /// shifts the visible center line so that an item sits centered (rather
@@ -122,7 +130,10 @@ class _IntervalWheelState extends State<IntervalWheel> {
     // the first item. So an offset of `_centerPadding` corresponds to
     // the first item being centered (= value min).
     final raw = (offset / _itemHeight).round();
-    final newValue = widget.min + raw;
+    // Clamp raw to [0, max-min] in case the scroll offset is
+    // temporarily out of bounds (e.g. mid-fling before ListView clamps).
+    final clampedRaw = raw.clamp(0, widget.max - widget.min);
+    final newValue = widget.min + clampedRaw;
     if (newValue != _value) {
       setState(() => _value = newValue);
       HapticFeedback.selectionClick();
@@ -216,7 +227,7 @@ class _IntervalWheelState extends State<IntervalWheel> {
             const Spacer(),
             SizedBox(
               width: 140,
-              height: _itemHeight * 3,
+              height: _itemHeight * 5,
               child: Stack(
                 alignment: Alignment.center,
                 children: [
@@ -294,10 +305,25 @@ class _IntervalWheelState extends State<IntervalWheel> {
                     itemBuilder: (ctx, i) {
                       final value = widget.min + i;
                       final isSelected = value == _value;
+                      final isLandmark = _landmarks.contains(value);
                       final distance =
                           (value - _value).abs().clamp(0, 2).toDouble();
-                      final opacity = 1.0 - (distance * 0.35);
-                      final scale = 1.0 - (distance * 0.15);
+                      final opacity = isLandmark
+                          ? 1.0
+                          : (1.0 - (distance * 0.35)).clamp(0.25, 1.0);
+                      // Selected gets the biggest size, landmarks are
+                      // mid-size, non-landmarks are smaller.
+                      final fontSize = isSelected
+                          ? 26.0
+                          : (isLandmark ? 18.0 : 13.0);
+                      final color = isSelected
+                          ? BrandColors.amber
+                          : (isLandmark
+                              ? BrandColors.text
+                              : BrandColors.textMuted);
+                      final weight = isSelected
+                          ? FontWeight.w700
+                          : (isLandmark ? FontWeight.w600 : FontWeight.w400);
                       return GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () {
@@ -315,21 +341,31 @@ class _IntervalWheelState extends State<IntervalWheel> {
                         child: Center(
                           child: Opacity(
                             opacity: opacity,
-                            child: Transform.scale(
-                              scale: scale,
-                              child: Text(
-                                '$value',
-                                style: GoogleFonts.jetBrainsMono(
-                                  fontSize: isSelected ? 28 : 22,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                  color: isSelected
-                                      ? BrandColors.amber
-                                      : BrandColors.textMuted,
-                                  letterSpacing: -0.5,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (isLandmark && !isSelected)
+                                  Container(
+                                    width: 4,
+                                    height: 4,
+                                    margin: const EdgeInsets.only(right: 6),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: BrandColors.amber
+                                          .withValues(alpha: 0.5),
+                                    ),
+                                  ),
+                                Text(
+                                  '$value',
+                                  style: GoogleFonts.jetBrainsMono(
+                                    fontSize: fontSize,
+                                    fontWeight: weight,
+                                    color: color,
+                                    letterSpacing: -0.3,
+                                  ),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
                         ),
@@ -376,7 +412,7 @@ class _IntervalWheelState extends State<IntervalWheel> {
           ],
         ),
         const SizedBox(height: 8),
-        // Min/Max label
+        // Range label
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -385,6 +421,11 @@ class _IntervalWheelState extends State<IntervalWheel> {
                     fontSize: 10,
                     color: BrandColors.textMuted,
                     letterSpacing: 1)),
+            Text('landmarks in bold',
+                style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    color: BrandColors.textMuted.withValues(alpha: 0.6),
+                    letterSpacing: 0.5)),
             Text('${widget.max} min',
                 style: GoogleFonts.plusJakartaSans(
                     fontSize: 10,
