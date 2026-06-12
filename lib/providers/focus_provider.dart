@@ -229,7 +229,9 @@ class FocusProvider extends ChangeNotifier {
   /// Validate the user-submitted answer. Returns true if correct.
   /// Incorrect answer → regenerate a new problem and force another try.
   bool submitAnswer(int value) {
-    if (_state != FocusState.challengeActive || _currentProblem == null) {
+    if ((_state != FocusState.challengeActive &&
+            _state != FocusState.escalated) ||
+        _currentProblem == null) {
       return false;
     }
     _challengeAttempts++;
@@ -237,7 +239,7 @@ class FocusProvider extends ChangeNotifier {
       _dismissChallenge();
       return true;
     }
-    // Wrong answer: hand them a fresh problem (still in challengeActive).
+    // Wrong answer: hand them a fresh problem (still in same state).
     _currentProblem = _gen.generate(tier: _settings.difficultyTier);
     notifyListeners();
     return false;

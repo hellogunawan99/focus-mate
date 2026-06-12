@@ -18,7 +18,8 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final focus = context.watch<FocusProvider>();
-    if (focus.state == FocusState.challengeActive) {
+    if (focus.state == FocusState.challengeActive ||
+        focus.state == FocusState.escalated) {
       return const ChallengeScreen();
     }
     return AuroraBackground(
