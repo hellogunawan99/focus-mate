@@ -285,6 +285,7 @@ class FocusNotificationService {
   Future<void> escalateChallenge({
     required bool sound,
     required bool vibrate,
+    String rawResourceName = 'focus_alarm',
   }) async {
     if (!_initialized) await init();
     // 1. Re-show the notification with maximum urgency.
@@ -320,7 +321,7 @@ class FocusNotificationService {
     if (sound) {
       try {
         await _alarmChannel.invokeMethod('startLoopingAlarm', {
-          'rawResourceName': 'focus_alarm',
+          'rawResourceName': rawResourceName,
           'vibrate': vibrate,
         });
       } on MissingPluginException {

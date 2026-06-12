@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../core/theme.dart';
 import '../providers/focus_provider.dart';
+import '../services/alarm_sound_registry.dart';
+import '../services/settings_repository.dart';
 import '../widgets/aurora_background.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -24,11 +26,17 @@ class SettingsScreen extends StatelessWidget {
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                   children: [
+                    _SectionTitle('Mode'),
+                    _ModeCard(focus: focus),
+                    const SizedBox(height: 24),
                     _SectionTitle('Interval'),
                     _IntervalCard(focus: focus),
                     const SizedBox(height: 24),
                     _SectionTitle('Difficulty'),
                     _DifficultyCard(focus: focus),
+                    const SizedBox(height: 24),
+                    _SectionTitle('Escalation'),
+                    _GraceCard(focus: focus),
                     const SizedBox(height: 24),
                     _SectionTitle('Alerts'),
                     _AlertsCard(focus: focus),
@@ -493,6 +501,187 @@ class _AboutCard extends StatelessWidget {
                         fontSize: 12,
                         color: BrandColors.textMuted,
                         height: 1.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Mode card — choose between single interval or Pomodoro cycles.
+class _ModeCard extends StatelessWidget {
+  final FocusProvider focus;
+  const _ModeCard({required this.focus});
+
+  @override
+  Widget build(BuildContext context) {
+    final isPomo = focus.settings.pomodoro != null;
+    return _Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Column(
+          children: [
+            _ModeRow(
+              label: 'Single interval',
+              description: 'Same interval on repeat',
+              icon: Icons.timer_outlined,
+              selected: !isPomo,
+              onTap: () => focus.setPomodoro(null),
+            ),
+            const Divider(color: BrandColors.outline, height: 1),
+            _ModeRow(
+              label: 'Pomodoro',
+              description:
+                  '${focus.settings.pomodoro?.workMinutes ?? 25}min work / '
+                  '${focus.settings.pomodoro?.breakMinutes ?? 5}min break / '
+                  '${focus.settings.pomodoro?.longBreakMinutes ?? 15}min long',
+              icon: Icons.local_cafe_outlined,
+              selected: isPomo,
+              onTap: () => focus.setPomodoro(PomodoroSettings.classic),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeRow extends StatelessWidget {
+  final String label;
+  final String description;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ModeRow({
+    required this.label,
+    required this.description,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          child: Row(
+            children: [
+              Icon(icon, color: selected ? BrandColors.amber : BrandColors.textMuted, size: 20),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label,
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: BrandColors.text)),
+                    Text(description,
+                        style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11, color: BrandColors.textMuted)),
+                  ],
+                ),
+              ),
+              if (selected)
+                const Icon(Icons.check_circle_rounded,
+                    color: BrandColors.amber, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Grace period card — how long until escalation kicks in.
+class _GraceCard extends StatelessWidget {
+  final FocusProvider focus;
+  const _GraceCard({required this.focus});
+
+  @override
+  Widget build(BuildContext context) {
+    const options = [15, 30, 60, 120];
+    return _Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40, height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: BrandColors.coral.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.alarm_rounded,
+                      color: BrandColors.coral, size: 20),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Escalation delay',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: BrandColors.text)),
+                      Text('How long to wait before looping alarm starts',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11, color: BrandColors.textMuted)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: options.map((s) {
+                final selected = focus.settings.escalationGraceSeconds == s;
+                return ChoiceChip(
+                  label: Text('${s}s'),
+                  selected: selected,
+                  onSelected: (_) => focus.setEscalationGrace(s),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: BrandColors.surfaceHigh,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.music_note_rounded,
+                      color: BrandColors.amber, size: 16),
+                  const SizedBox(width: 8),
+                  Text('Alarm sound:',
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12, color: BrandColors.textMuted)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      AlarmSoundRegistry.byId(focus.settings.alarmSoundId).label,
+                      style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: BrandColors.text),
+                    ),
                   ),
                 ],
               ),

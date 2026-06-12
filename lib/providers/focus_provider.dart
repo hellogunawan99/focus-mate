@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../core/math_problem.dart';
+import '../services/alarm_sound_registry.dart';
 import '../services/notification_service.dart';
 import '../services/settings_repository.dart';
+import '../services/stats_repository.dart';
 
 enum FocusState { idle, running, challengeActive, paused, escalated }
 
@@ -12,7 +14,14 @@ enum FocusState { idle, running, challengeActive, paused, escalated }
 class FocusProvider extends ChangeNotifier {
   final SettingsRepository _repo;
   final FocusNotificationService _notif;
+  final StatsRepository _statsRepo = StatsRepository();
   final MathProblemGenerator _gen = MathProblemGenerator();
+
+  /// Today's accumulated stats, refreshed when the user starts a session.
+  DailyStat _todayStat = DailyStat.empty;
+  int _streak = 0;
+  int _longestStreak = 0;
+  String _streakLastDay = '';
 
   AppSettings _settings = AppSettings.defaults;
   FocusState _state = FocusState.idle;
@@ -61,6 +70,9 @@ class FocusProvider extends ChangeNotifier {
   bool get isRunning => _state == FocusState.running;
   int get problemsSolved => _problemsSolved;
   int get totalFocusSeconds => _totalFocusSeconds;
+  DailyStat get todayStat => _todayStat;
+  int get streak => _streak;
+  int get longestStreak => _longestStreak;
 
   /// Progress 0..1 for the countdown ring/bar (0 = just started, 1 = next
   /// alert is due now).
@@ -79,17 +91,34 @@ class FocusProvider extends ChangeNotifier {
   /// alarm. Returns 0 once escalated.
   int get challengeSecondsUntilEscalation {
     if (_state == FocusState.escalated) return 0;
-    if (_state != FocusState.challengeActive) return _escalationGraceSeconds;
-    final remaining = _escalationGraceSeconds - _challengeElapsed.inSeconds;
-    return remaining.clamp(0, _escalationGraceSeconds);
+    if (_state != FocusState.challengeActive) {
+      return _settings.escalationGraceSeconds;
+    }
+    final remaining =
+        _settings.escalationGraceSeconds - _challengeElapsed.inSeconds;
+    return remaining.clamp(0, _settings.escalationGraceSeconds);
   }
-
-  /// Configurable grace period before escalation kicks in. Default 60s.
-  /// (Could be moved to settings; keeping it constant for now.)
-  static const int _escalationGraceSeconds = 60;
 
   Future<void> bootstrap() async {
     _settings = await _repo.load();
+    final stats = await _statsRepo.getLastDays(1);
+    _todayStat = stats.isNotEmpty ? stats.first : DailyStat.empty;
+    final s = await _statsRepo.getStreak();
+    _streak = s.current;
+    _longestStreak = s.longest;
+    _streakLastDay = s.lastDay;
+    notifyListeners();
+  }
+
+  /// Reload today's stats and streak (call after returning from
+  /// background to refresh the day counter).
+  Future<void> refreshStats() async {
+    final stats = await _statsRepo.getLastDays(1);
+    _todayStat = stats.isNotEmpty ? stats.first : DailyStat.empty;
+    final s = await _statsRepo.getStreak();
+    _streak = s.current;
+    _longestStreak = s.longest;
+    _streakLastDay = s.lastDay;
     notifyListeners();
   }
 
@@ -123,6 +152,33 @@ class FocusProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Update the grace period (seconds) before the challenge escalates.
+  /// Allowed: 15, 30, 60, 120. Values outside this range are ignored.
+  Future<void> setEscalationGrace(int seconds) async {
+    const allowed = {15, 30, 60, 120};
+    if (!allowed.contains(seconds)) return;
+    _settings = _settings.copyWith(escalationGraceSeconds: seconds);
+    await _repo.save(_settings);
+    notifyListeners();
+  }
+
+  /// Switch the alarm sound preset.
+  Future<void> setAlarmSound(String id) async {
+    _settings = _settings.copyWith(alarmSoundId: id);
+    await _repo.save(_settings);
+    notifyListeners();
+  }
+
+  /// Enable / disable pomodoro mode (null = off).
+  Future<void> setPomodoro(PomodoroSettings? pomo) async {
+    _settings = _settings.copyWith(
+      pomodoro: pomo,
+      clearPomodoro: pomo == null,
+    );
+    await _repo.save(_settings);
+    notifyListeners();
+  }
+
   // --- Focus mode lifecycle --------------------------------------------
   Future<bool> enableFocusMode() async {
     await _notif.init();
@@ -132,6 +188,10 @@ class FocusProvider extends ChangeNotifier {
     _sessionStartedAt = DateTime.now();
     _problemsSolved = 0;
     _totalFocusSeconds = 0;
+    // Bump streak + refresh today's stat.
+    _streak = await _statsRepo.bumpStreak();
+    if (_streak > _longestStreak) _longestStreak = _streak;
+    await refreshStats();
     await _restartTimer();
     _startTicker();
     notifyListeners();
@@ -168,7 +228,7 @@ class FocusProvider extends ChangeNotifier {
     // Schedule escalation: if user hasn't solved in 60s, escalate.
     _escalationTimer?.cancel();
     _escalationTimer = Timer(
-      const Duration(seconds: _escalationGraceSeconds),
+        Duration(seconds: _settings.escalationGraceSeconds),
       _escalateChallenge,
     );
     // Tick the elapsed counter every second so the UI shows the
@@ -191,9 +251,13 @@ class FocusProvider extends ChangeNotifier {
     if (_state != FocusState.challengeActive) return;
     _escalationTicker?.cancel();
     _state = FocusState.escalated;
+    _statsRepo.addToToday(escalationsTriggered: 1);
+    _todayStat = _todayStat.add(escalationsTriggered: 1);
+    final preset = AlarmSoundRegistry.byId(_settings.alarmSoundId);
     _notif.escalateChallenge(
       sound: _settings.soundEnabled,
       vibrate: _settings.vibrationEnabled,
+      rawResourceName: preset.rawResourceName,
     );
     notifyListeners();
   }
@@ -211,7 +275,7 @@ class FocusProvider extends ChangeNotifier {
       _challengeElapsed = Duration.zero;
       _escalationTimer?.cancel();
       _escalationTimer = Timer(
-        const Duration(seconds: _escalationGraceSeconds),
+      Duration(seconds: _settings.escalationGraceSeconds),
         _escalateChallenge,
       );
       _escalationTicker?.cancel();
@@ -249,6 +313,8 @@ class FocusProvider extends ChangeNotifier {
     _state = FocusState.running;
     _currentProblem = null;
     _problemsSolved++;
+    _statsRepo.addToToday(problemsSolved: 1);
+    _todayStat = _todayStat.add(problemsSolved: 1);
     _escalationTimer?.cancel();
     _escalationTicker?.cancel();
     _notif.stopEscalation();
@@ -286,6 +352,12 @@ class FocusProvider extends ChangeNotifier {
       final remaining = _nextAlertAt!.difference(DateTime.now());
       _nextAlertIn = remaining.isNegative ? Duration.zero : remaining;
       _totalFocusSeconds++;
+      // Persist focus seconds to today's daily stat every 30 seconds
+      // (amortized to avoid hammering disk on every tick).
+      if (_totalFocusSeconds % 30 == 0) {
+        _statsRepo.addToToday(focusSeconds: 30);
+        _todayStat = _todayStat.add(focusSeconds: 30);
+      }
       // If we've hit zero without the OS having fired the alert (e.g. exact
       // alarm permission was denied and we fell back to inexact scheduling),
       // proactively trigger the challenge so the user isn't left waiting.

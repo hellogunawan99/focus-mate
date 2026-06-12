@@ -161,10 +161,13 @@ class _IdleView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final focus = context.watch<FocusProvider>();
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(height: 32),
+        const SizedBox(height: 24),
+        _TodayStatsCard(focus: focus),
+        const SizedBox(height: 24),
         Text(
           'INTERVAL',
           style: GoogleFonts.plusJakartaSans(
@@ -183,9 +186,9 @@ class _IdleView extends StatelessWidget {
             color: BrandColors.textMuted,
           ),
         ),
-        const SizedBox(height: 36),
+        const SizedBox(height: 28),
         _IntervalSlider(initial: intervalMinutes),
-        const SizedBox(height: 24),
+        const SizedBox(height: 20),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: AppDecorations.glassCard,
@@ -207,6 +210,118 @@ class _IdleView extends StatelessWidget {
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _TodayStatsCard extends StatelessWidget {
+  final FocusProvider focus;
+  const _TodayStatsCard({required this.focus});
+
+  String _formatFocus(int seconds) {
+    if (seconds < 60) return '${seconds}s';
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    if (m < 60) return s == 0 ? '${m}m' : '${m}m ${s}s';
+    final h = m ~/ 60;
+    final mm = m % 60;
+    return '${h}h ${mm}m';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final today = focus.todayStat;
+    final streak = focus.streak;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: AppDecorations.glassCard,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.today_rounded,
+                  color: BrandColors.amber, size: 16),
+              const SizedBox(width: 8),
+              Text('TODAY',
+                  style: GoogleFonts.plusJakartaSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 2.5,
+                      color: BrandColors.textMuted)),
+              const Spacer(),
+              if (streak > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: BrandColors.lilac.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: BrandColors.lilac.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.local_fire_department_rounded,
+                          color: BrandColors.lilac, size: 12),
+                      const SizedBox(width: 4),
+                      Text('$streak day${streak == 1 ? '' : 's'}',
+                          style: GoogleFonts.plusJakartaSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: BrandColors.lilac)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _MiniStat(
+                value: _formatFocus(today.focusSeconds),
+                label: 'FOCUSED',
+              ),
+              Container(width: 1, height: 28, color: BrandColors.outline),
+              _MiniStat(
+                value: '${today.problemsSolved}',
+                label: 'SOLVED',
+              ),
+              Container(width: 1, height: 28, color: BrandColors.outline),
+              _MiniStat(
+                value: '${today.escalationsTriggered}',
+                label: 'ALARMS',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  final String value;
+  final String label;
+  const _MiniStat({required this.value, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value,
+            style: GoogleFonts.jetBrainsMono(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: BrandColors.text)),
+        const SizedBox(height: 2),
+        Text(label,
+            style: GoogleFonts.plusJakartaSans(
+                fontSize: 9,
+                letterSpacing: 1.5,
+                fontWeight: FontWeight.w700,
+                color: BrandColors.textMuted)),
       ],
     );
   }
