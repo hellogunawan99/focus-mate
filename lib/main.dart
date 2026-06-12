@@ -74,6 +74,16 @@ class _FocusMateAppState extends State<FocusMateApp> {
         // Force dark theme for now — this app is meant for late-night
         // focus sessions and the design is dark-first.
         themeMode: ThemeMode.dark,
+        // Global fix for Android rendering "yellow double underline" on
+        // every Text widget — happens when DefaultTextStyle is missing
+        // or when text sits inside a Stack outside a Material boundary.
+        // Explicitly set decoration: none on the default text style.
+        builder: (context, child) {
+          return DefaultTextStyle(
+            style: const TextStyle(decoration: TextDecoration.none),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: const HomeScreen(),
       ),
     );

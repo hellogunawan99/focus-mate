@@ -1,7 +1,7 @@
 name: focus_mate
 description: "Focus Mate - anti-drowsiness focus timer with math-challenge enforcement."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.2+3
 
 environment:
   sdk: ^3.12.0
