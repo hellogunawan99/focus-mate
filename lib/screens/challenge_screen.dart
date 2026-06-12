@@ -243,6 +243,15 @@ class _ChallengeScreenState extends State<ChallengeScreen>
             decoration: const InputDecoration(
               hintText: 'your answer',
             ),
+            onChanged: (_) {
+              // Typing any digit in the answer field silences the escalation
+              // alarm and resets the 60s grace timer. The user can then
+              // finish typing their answer at their own pace.
+              final f = context.read<FocusProvider>();
+              if (f.state == FocusState.escalated) {
+                f.acknowledgeInteraction();
+              }
+            },
             onSubmitted: (_) => _submit(),
           ),
           const SizedBox(height: 16),
