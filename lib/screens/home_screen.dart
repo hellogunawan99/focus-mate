@@ -8,6 +8,7 @@ import '../core/theme.dart';
 import '../providers/focus_provider.dart';
 import '../widgets/aurora_background.dart';
 import '../widgets/brand_mark.dart';
+import '../widgets/interval_wheel.dart';
 import '../widgets/pulse_rings.dart';
 import 'challenge_screen.dart';
 import 'settings_screen.dart';
@@ -187,7 +188,7 @@ class _IdleView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 28),
-        _IntervalSlider(initial: intervalMinutes),
+        _IntervalWheel(initial: intervalMinutes),
         const SizedBox(height: 20),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -577,52 +578,19 @@ class _BigNumber extends StatelessWidget {
   }
 }
 
-class _IntervalSlider extends StatelessWidget {
+class _IntervalWheel extends StatelessWidget {
   final int initial;
-  const _IntervalSlider({required this.initial});
+  const _IntervalWheel({required this.initial});
 
   @override
   Widget build(BuildContext context) {
-    final focus = context.read<FocusProvider>();
-    double value = initial.toDouble();
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Column(
-            children: [
-              Slider(
-                min: 5,
-                max: 120,
-                divisions: 23,
-                value: value.clamp(5, 120),
-                onChanged: (v) => setState(() => value = v),
-                onChangeEnd: (v) => focus.setInterval(v.round()),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('5 min',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11, color: BrandColors.textMuted)),
-                    Text('${value.round()} min',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: BrandColors.amber,
-                        )),
-                    Text('120 min',
-                        style: GoogleFonts.plusJakartaSans(
-                            fontSize: 11, color: BrandColors.textMuted)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+    final focus = context.watch<FocusProvider>();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: IntervalWheel(
+        value: focus.settings.intervalMinutes,
+        onChanged: (v) => focus.setInterval(v),
+      ),
     );
   }
 }
