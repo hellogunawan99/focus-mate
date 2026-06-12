@@ -6,7 +6,7 @@ import '../core/math_problem.dart';
 import '../services/notification_service.dart';
 import '../services/settings_repository.dart';
 
-enum FocusState { idle, running, challengeActive, paused }
+enum FocusState { idle, running, challengeActive, paused, escalated }
 
 /// Single source of truth for the focus-mode state machine.
 class FocusProvider extends ChangeNotifier {
@@ -30,6 +30,20 @@ class FocusProvider extends ChangeNotifier {
   int _problemsSolved = 0;
   int _totalFocusSeconds = 0;
   DateTime? _sessionStartedAt;
+
+  /// When the current challenge started — used to drive the escalation
+  /// timer. Null when no challenge is active.
+  DateTime? _challengeStartedAt;
+
+  /// Timer that fires after the grace period (default 60s) to escalate
+  /// the challenge into a continuous alarm mode.
+  Timer? _escalationTimer;
+
+  /// Cached elapsed time in the current challenge, recomputed every second
+  /// by [_escalationTicker]. Used to display a "1:00" countdown on the
+  /// challenge screen.
+  Duration _challengeElapsed = Duration.zero;
+  Timer? _escalationTicker;
 
   FocusProvider({
     required SettingsRepository repo,
@@ -57,6 +71,22 @@ class FocusProvider extends ChangeNotifier {
     final remaining = _nextAlertIn.inSeconds.clamp(0, total);
     return 1 - (remaining / total);
   }
+
+  /// How long the current challenge has been on screen, in seconds.
+  Duration get challengeElapsed => _challengeElapsed;
+
+  /// Seconds remaining before the challenge escalates into a continuous
+  /// alarm. Returns 0 once escalated.
+  int get challengeSecondsUntilEscalation {
+    if (_state == FocusState.escalated) return 0;
+    if (_state != FocusState.challengeActive) return _escalationGraceSeconds;
+    final remaining = _escalationGraceSeconds - _challengeElapsed.inSeconds;
+    return remaining.clamp(0, _escalationGraceSeconds);
+  }
+
+  /// Configurable grace period before escalation kicks in. Default 60s.
+  /// (Could be moved to settings; keeping it constant for now.)
+  static const int _escalationGraceSeconds = 60;
 
   Future<void> bootstrap() async {
     _settings = await _repo.load();
@@ -114,6 +144,9 @@ class FocusProvider extends ChangeNotifier {
     await _repo.save(_settings);
     await _notif.cancelAll();
     _stopTicker();
+    _escalationTimer?.cancel();
+    _escalationTicker?.cancel();
+    _notif.stopEscalation();
     _nextAlertAt = null;
     _nextAlertIn = Duration.zero;
     notifyListeners();
@@ -124,13 +157,73 @@ class FocusProvider extends ChangeNotifier {
   Future<void> triggerChallenge() async {
     _currentProblem = _gen.generate(tier: _settings.difficultyTier);
     _challengeAttempts = 0;
+    _challengeStartedAt = DateTime.now();
+    _challengeElapsed = Duration.zero;
     _state = FocusState.challengeActive;
     _stopTicker(); // pause countdown while user is solving
     await _notif.showFocusAlert(
       sound: _settings.soundEnabled,
       vibrate: _settings.vibrationEnabled,
     );
+    // Schedule escalation: if user hasn't solved in 60s, escalate.
+    _escalationTimer?.cancel();
+    _escalationTimer = Timer(
+      const Duration(seconds: _escalationGraceSeconds),
+      _escalateChallenge,
+    );
+    // Tick the elapsed counter every second so the UI shows the
+    // 60 → 0 countdown.
+    _escalationTicker?.cancel();
+    _escalationTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_state != FocusState.challengeActive || _challengeStartedAt == null) {
+        return;
+      }
+      _challengeElapsed = DateTime.now().difference(_challengeStartedAt!);
+      notifyListeners();
+    });
     notifyListeners();
+  }
+
+  /// Called when user has not solved the challenge within the grace period.
+  /// Switches to escalated state, which triggers a continuous alarm that
+  /// only stops on user interaction.
+  void _escalateChallenge() {
+    if (_state != FocusState.challengeActive) return;
+    _escalationTicker?.cancel();
+    _state = FocusState.escalated;
+    _notif.escalateChallenge(
+      sound: _settings.soundEnabled,
+      vibrate: _settings.vibrationEnabled,
+    );
+    notifyListeners();
+  }
+
+  /// Called when the user interacts with the challenge screen (tap, scroll,
+  /// type). In escalated state, this stops the continuous alarm and returns
+  /// to the regular challenge state. In normal state, it's a no-op (the user
+  /// is just acknowledging the screen).
+  void acknowledgeInteraction() {
+    if (_state == FocusState.escalated) {
+      _notif.stopEscalation();
+      _state = FocusState.challengeActive;
+      // Reset the challenge timer so user gets another 60s to solve.
+      _challengeStartedAt = DateTime.now();
+      _challengeElapsed = Duration.zero;
+      _escalationTimer?.cancel();
+      _escalationTimer = Timer(
+        const Duration(seconds: _escalationGraceSeconds),
+        _escalateChallenge,
+      );
+      _escalationTicker?.cancel();
+      _escalationTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (_state != FocusState.challengeActive || _challengeStartedAt == null) {
+          return;
+        }
+        _challengeElapsed = DateTime.now().difference(_challengeStartedAt!);
+        notifyListeners();
+      });
+      notifyListeners();
+    }
   }
 
   /// Validate the user-submitted answer. Returns true if correct.
@@ -154,6 +247,9 @@ class FocusProvider extends ChangeNotifier {
     _state = FocusState.running;
     _currentProblem = null;
     _problemsSolved++;
+    _escalationTimer?.cancel();
+    _escalationTicker?.cancel();
+    _notif.stopEscalation();
     _notif.cancelFocusAlert();
     // Reschedule the next interval from the moment they solved it.
     _notif.scheduleNext(
@@ -208,6 +304,8 @@ class FocusProvider extends ChangeNotifier {
   @override
   void dispose() {
     _ticker?.cancel();
+    _escalationTimer?.cancel();
+    _escalationTicker?.cancel();
     super.dispose();
   }
 }

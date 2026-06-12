@@ -1,5 +1,7 @@
 import 'dart:io' show Platform;
+import 'dart:ui' show Color;
 
+import 'package:flutter/services.dart' show MissingPluginException, MethodChannel;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -269,4 +271,74 @@ class FocusNotificationService {
   /// Should be called once at startup and the result consumed.
   String? _pendingLaunchPayload;
   Future<String?> getLaunchNotificationPayload() async => _pendingLaunchPayload;
+
+  // --- Escalation (continuous alarm when user ignores challenge) -------
+  //
+  // flutter_local_notifications doesn't natively support a looping alarm
+  // sound, so we use the platform channel to drive a native MediaPlayer
+  // on Android. The native side is in MainActivity.kt.
+  static final _alarmChannel = MethodChannel('id.focusmate.alarm');
+
+  /// Start a continuous looping alarm. Updates the notification to a
+  /// high-urgency alarm with fullScreenIntent so it pops up over the
+  /// lock screen even from a backgrounded app.
+  Future<void> escalateChallenge({
+    required bool sound,
+    required bool vibrate,
+  }) async {
+    if (!_initialized) await init();
+    // 1. Re-show the notification with maximum urgency.
+    final androidDetails = AndroidNotificationDetails(
+      NotificationChannels.focusAlert,
+      'Focus Alerts',
+      channelDescription: 'Critical anti-drowsiness alarm',
+      importance: Importance.max,
+      priority: Priority.max,
+      category: AndroidNotificationCategory.alarm,
+      fullScreenIntent: true,
+      ongoing: true,
+      autoCancel: false,
+      playSound: sound,
+      enableVibration: vibrate,
+      ticker: 'WAKE UP — solve the math problem',
+      color: const Color(0xFFFF6F6F),
+    );
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentSound: true,
+      interruptionLevel: InterruptionLevel.critical,
+    );
+    await _plugin.show(
+      NotificationChannels.focusAlertId,
+      '🚨 WAKE UP — solve the math problem',
+      'Touch the screen to silence the alarm.',
+      NotificationDetails(android: androidDetails, iOS: iosDetails),
+      payload: 'open_challenge',
+    );
+    // 2. Start the native looping alarm (Android only; iOS handles via
+    // the critical notification's built-in sound loop).
+    if (sound) {
+      try {
+        await _alarmChannel.invokeMethod('startLoopingAlarm', {
+          'rawResourceName': 'focus_alarm',
+          'vibrate': vibrate,
+        });
+      } on MissingPluginException {
+        // Running on a platform without the channel (e.g. tests, iOS).
+      } catch (_) {
+        // Fallback: the notification sound will still play, just not loop.
+      }
+    }
+  }
+
+  /// Stop the looping alarm and revert the notification to standard state.
+  Future<void> stopEscalation() async {
+    try {
+      await _alarmChannel.invokeMethod('stopLoopingAlarm');
+    } on MissingPluginException {
+      // ignore
+    } catch (_) {
+      // ignore
+    }
+  }
 }

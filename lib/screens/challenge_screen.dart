@@ -92,6 +92,7 @@ class _ChallengeScreenState extends State<ChallengeScreen>
   Widget build(BuildContext context) {
     final focus = context.watch<FocusProvider>();
     final problem = focus.currentProblem;
+    final isEscalated = focus.state == FocusState.escalated;
 
     if (_previousAttempts != focus.challengeAttempts) {
       _previousAttempts = focus.challengeAttempts;
@@ -105,22 +106,44 @@ class _ChallengeScreenState extends State<ChallengeScreen>
     return PopScope(
       canPop: false,
       child: Scaffold(
-        body: AuroraBackground(
-          active: true,
-          child: SafeArea(
-            child: Stack(
-              children: [
-                _content(focus, problem),
-                if (_showSuccess) _SuccessOverlay(controller: _successCtrl),
-              ],
+        body: Stack(
+          children: [
+            AuroraBackground(
+              active: true,
+              child: const SizedBox.expand(),
             ),
-          ),
+            // Red pulsing overlay when escalated
+            if (isEscalated) _EscalationBackground(),
+            GestureDetector(
+              // Catch any tap outside the input field to acknowledge
+              // interaction (stops the looping alarm if escalated).
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                if (isEscalated) {
+                  final f = context.read<FocusProvider>();
+                  f.acknowledgeInteraction();
+                  // Bring focus back to the input so user can type.
+                  _focus.requestFocus();
+                }
+              },
+              child: SafeArea(
+                child: Stack(
+                  children: [
+                    _content(focus, problem),
+                    if (_showSuccess) _SuccessOverlay(controller: _successCtrl),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
   Widget _content(FocusProvider focus, dynamic problem) {
+    final isEscalated = focus.state == FocusState.escalated;
+    final secondsLeft = focus.challengeSecondsUntilEscalation;
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       child: Column(
@@ -144,26 +167,44 @@ class _ChallengeScreenState extends State<ChallengeScreen>
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
-                    color: BrandColors.amber.withValues(alpha: 0.12),
+                    color: (isEscalated
+                            ? BrandColors.coral
+                            : BrandColors.amber)
+                        .withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                        color: BrandColors.amber.withValues(alpha: 0.4)),
+                        color: (isEscalated
+                                ? BrandColors.coral
+                                : BrandColors.amber)
+                            .withValues(alpha: 0.4)),
                   ),
                   child: Text(
-                    'WAKE UP',
+                    isEscalated ? 'TOUCH SCREEN' : 'WAKE UP',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 2.5,
-                      color: BrandColors.amber,
+                      color: isEscalated
+                          ? BrandColors.coral
+                          : BrandColors.amber,
                     ),
                   ),
                 ),
-                const SizedBox(height: 36),
+                const SizedBox(height: 24),
+                if (!isEscalated)
+                  Text(
+                    'Auto-alarm in ${secondsLeft}s',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      letterSpacing: 1.2,
+                      color: BrandColors.textMuted,
+                    ),
+                  ),
+                if (!isEscalated) const SizedBox(height: 12),
                 Text(
                   problem.prompt,
                   style: GoogleFonts.jetBrainsMono(
-                    fontSize: 72,
+                    fontSize: isEscalated ? 56 : 72,
                     fontWeight: FontWeight.w600,
                     color: _wrong ? BrandColors.coral : BrandColors.text,
                     letterSpacing: -1.5,
@@ -210,14 +251,16 @@ class _ChallengeScreenState extends State<ChallengeScreen>
             child: FilledButton(
               onPressed: _submit,
               style: FilledButton.styleFrom(
-                backgroundColor: BrandColors.amber,
+                backgroundColor: isEscalated
+                    ? BrandColors.coral
+                    : BrandColors.amber,
                 foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
               ),
               child: Text(
-                'SUBMIT ANSWER',
+                isEscalated ? 'STOP ALARM & SUBMIT' : 'SUBMIT ANSWER',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w800,
                   fontSize: 14,
@@ -229,7 +272,9 @@ class _ChallengeScreenState extends State<ChallengeScreen>
           const Spacer(),
           Center(
             child: Text(
-              'You can\'t skip this. Solve it to keep your session going.',
+              isEscalated
+                  ? 'Tap anywhere to silence the alarm — then solve it.'
+                  : 'You can\'t skip this. Solve it to keep your session going.',
               textAlign: TextAlign.center,
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 11,
@@ -347,6 +392,41 @@ class _SuccessOverlay extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// Pulsating red overlay shown when the challenge has escalated (user
+/// ignored the initial 60s grace period). Pulses 0.4s on, 0.4s off.
+class _EscalationBackground extends StatefulWidget {
+  @override
+  State<_EscalationBackground> createState() => _EscalationBackgroundState();
+}
+
+class _EscalationBackgroundState extends State<_EscalationBackground>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 800),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, __) {
+          return Container(
+            color: BrandColors.coral.withValues(alpha: 0.08 + 0.10 * _ctrl.value),
+          );
+        },
+      ),
     );
   }
 }
