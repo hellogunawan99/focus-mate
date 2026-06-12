@@ -1,0 +1,42 @@
+name: focus_mate
+description: "Focus Mate - anti-drowsiness focus timer with math-challenge enforcement."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management
+  provider: ^6.1.2
+
+  # Persistent storage
+  shared_preferences: ^2.3.3
+
+  # Notifications & background scheduling
+  flutter_local_notifications: ^17.2.4
+  timezone: ^0.9.4
+  android_alarm_manager_plus: ^5.0.0
+  permission_handler: ^11.3.1
+
+  # Lifecycle & app-state
+  wakelock_plus: ^1.2.10
+
+  # Utility
+  intl: ^0.20.1
+
+  # Google Fonts
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
