@@ -1,120 +1,298 @@
+<div align="center">
+
+<img src="docs/icon.png" width="128" height="128" alt="Focus Mate icon"/>
+
 # Focus Mate
 
-Anti-drowsiness focus timer. You set an interval; at the end of each interval
-an alert fires and a math problem blocks the screen. You cannot dismiss the
-alert without solving it — so even if you start dozing off, the app forces
-periodic cognitive engagement.
+**Stay sharp. Don't drift.**
 
-## Stack
+An anti-drowsiness focus timer for work and study sessions. Set an interval;
+when it expires, a math problem blocks the screen. You can't dismiss it without
+solving the problem — so even if you start dozing off, the app forces a
+periodic cognitive break.
 
-- **Flutter 3.44+ / Dart 3.12+** — single codebase for iOS and Android with
-  native-level performance.
-- **flutter_local_notifications** — reliable OS-scheduled notifications that
-  fire even when the app is killed. Uses exact alarms on Android and
-  `UNCalendarNotificationTrigger` on iOS.
-- **shared_preferences** — persistent settings (interval, difficulty, sound,
-  vibration, focus-mode state) that survive app restarts and reboots.
-- **wakelock_plus** — keeps the screen alive during the math challenge so the
-  user can't dismiss by waiting for screen-off.
-- **provider** — lightweight state management.
+[Install](#-install) ·
+[Features](#-features) ·
+[How it works](#-how-it-works) ·
+[Architecture](#-architecture) ·
+[Build from source](#-build-from-source) ·
+[Contributing](#-contributing)
 
-## Project layout
+</div>
+
+---
+
+## ✨ Why Focus Mate?
+
+| Common focus tools | Focus Mate |
+|---|---|
+| ❌ Play music and hope you don't drift | ✅ Forces you to engage every interval |
+| ❌ Pomodoro timer with no engagement check | ✅ Math challenge to prove you're still with it |
+| ❌ Silently buzzes while you doze | ✅ Escalates to a continuous alarm if you don't respond |
+| ❌ All UI, no follow-through | ✅ Unskippable challenges, real cognitive breaks |
+
+The science is simple: **drowsiness is reversible with a 10-second engagement break**.
+A stretch, a sip of water, or solving a math problem. Focus Mate makes that
+break *non-negotiable* and *cognitively active* — perfect for coding sessions,
+deep work, or study marathons.
+
+---
+
+## 📱 Screenshots
+
+<div align="center">
+
+| Home (idle) | Home (focusing) | Math challenge |
+|:---:|:---:|:---:|
+| ![home-idle](docs/screenshots/01-home-idle.png) | ![home-running](docs/screenshots/02-home-running.png) | ![challenge](docs/screenshots/03-challenge.png) |
+| Set interval, start session | Live countdown with progress ring | Math problem to solve |
+
+| Settings | Escalation alarm | Editor (custom interval) |
+|:---:|:---:|:---:|
+| ![settings](docs/screenshots/04-settings.png) | _red pulsing UI + looping alarm_ | _scroll wheel + manual editor_ |
+
+</div>
+
+---
+
+## 🚀 Features
+
+### 🎯 Core
+- **Customizable intervals** — 1 to 240 minutes via scroll wheel or manual editor
+- **Math challenge** — 5 difficulty tiers (single-digit → 3-digit arithmetic) on a 60-second grace period
+- **Anti-bypass lock** — `PopScope` + wakelock + ongoing notification = can't swipe away or screen-off
+- **Foreground service** — math challenges survive backgrounding, app kill, even device reboot (Android 8+)
+
+### 🛡️ Escalation
+- **60-second grace period** (configurable: 15s/30s/60s/120s) to solve the challenge normally
+- **Looping alarm** + vibration kicks in if you don't respond — continues until you touch the screen
+- **Visual urgency** — red pulsing background overlay + "TOUCH SCREEN" pill + "STOP ALARM & SUBMIT" button
+- **Bypasses Do Not Disturb** — uses `USAGE_ALARM` audio attribute on Android
+
+### 📊 Tracking
+- **Today stats** — focused time, problems solved, alarms triggered
+- **Streak counter** — consecutive days using the app
+- **Persistent settings** — everything in `SharedPreferences`, survives restart + reboot
+
+### 🎨 Polish
+- **Custom two-tone alarm** — procedurally generated C5-E5 ascending bell (no copyrighted assets)
+- **Aurora animated background** — soft drifting gradients
+- **Plus Jakarta Sans + JetBrains Mono** typography
+- **Haptic feedback** on every interaction
+- **Material 3** design language with custom dark theme
+
+---
+
+## 🧠 How it works
+
+```
+T = 0          [Start focus session]
+                  ↓
+T = 0..N       [Live countdown with progress ring]
+                  ↓
+T = N          [Alert fires, challenge starts]
+                  ↓
+T = N..N+60    [User has 60s to solve math problem]
+                  ↓
+T = N+60       [If unsolved: ESCALATION]
+                  ├─ Looping alarm tone (C5-E5)
+                  ├─ Vibration pattern (400ms on, 200ms off)
+                  ├─ Red pulsing background
+                  └─ "TOUCH SCREEN" indicator
+                  ↓
+[User touches screen OR types in answer]
+                  ↓
+                  ├─ Alarm silences
+                  ├─ User gets another 60s to solve
+                  ↓
+[Correct answer submitted]
+                  ↓
+                  ├─ Stats updated (focus time, problems solved)
+                  ├─ Next interval scheduled
+                  └─ Return to T = 0..N
+```
+
+---
+
+## 🏗️ Architecture
 
 ```
 lib/
-├── main.dart                          # App entry, provider wiring, launch routing
+├── main.dart                       # App entry, MaterialApp, timezone setup
 ├── core/
-│   └── math_problem.dart              # MathProblem + MathProblemGenerator
+│   ├── math_problem.dart           # MathProblem + MathProblemGenerator
+│   ├── theme.dart                  # Brand colors, design tokens, Material 3 theme
+│   └── alarm_sound_registry.dart   # Preset alarm sound definitions
 ├── services/
-│   ├── notification_service.dart      # flutter_local_notifications wrapper
-│   └── settings_repository.dart       # AppSettings + SharedPreferences
+│   ├── notification_service.dart   # flutter_local_notifications wrapper + MethodChannel
+│   ├── settings_repository.dart    # SharedPreferences-backed AppSettings + PomodoroSettings
+│   └── stats_repository.dart       # Daily stat persistence + streak tracking
 ├── providers/
-│   └── focus_provider.dart            # State machine: idle/running/challenge
-└── screens/
-    ├── home_screen.dart               # Idle + running home UI
-    ├── challenge_screen.dart          # Full-screen math challenge (locked)
-    └── settings_screen.dart           # Interval, difficulty, sound/vibration
+│   └── focus_provider.dart         # ChangeNotifier state machine (idle → running → challengeActive → escalated)
+├── screens/
+│   ├── home_screen.dart            # Idle + running views, today stats card
+│   ├── challenge_screen.dart       # Full-screen math problem + escalation UI
+│   └── settings_screen.dart        # Interval, difficulty, escalation, alarm toggles
+└── widgets/
+    ├── aurora_background.dart      # Animated mesh-gradient background
+    ├── brand_mark.dart             # Custom-painted target/aperture logo
+    ├── interval_wheel.dart         # Vertical scroll wheel with landmark values
+    └── pulse_rings.dart            # Animated focus rings
 ```
 
-## How the anti-bypass works
+### Native (Android) — `android/app/src/main/kotlin/id/focusmate/focus_mate/MainActivity.kt`
+- MethodChannel handler for `id.focusmate.alarm`
+- `MediaPlayer` with `isLooping = true` for the alarm sound
+- `Vibrator` with repeating pattern
+- `AudioAttributes.USAGE_ALARM` to bypass silent mode
 
-1. The notification uses `fullScreenIntent: true` (Android) and
-   `interruptionLevel: timeSensitive` (iOS), so it pops up over the lock
-   screen if needed.
-2. The challenge screen wraps the entire UI in `PopScope(canPop: false)` —
-   the system back button and predictive-back gesture do nothing.
-3. The submit handler regenerates a *new* problem on a wrong answer — you
-   can't blindly tap the same guess twice.
-4. `WakelockPlus.enable()` keeps the screen on while the challenge is active,
-   so the user can't wait the device out.
-5. The notification channel is `ongoing: true` + `autoCancel: false`, so it
-   stays pinned until the challenge is solved.
+### Native (iOS) — `ios/Runner/AppDelegate.swift`
+- Same MethodChannel pattern
+- `AVAudioPlayer` with `numberOfLoops = -1` (loop forever)
 
-## Permissions
+### State machine
+- `FocusState` enum: `idle`, `running`, `challengeActive`, `escalated`
+- State transitions are explicit and gated (e.g. can only escalate from `challengeActive`)
+- All timers cancelled on state transition to prevent leaks
 
-| Platform | Permission                              | Why                                     |
-|----------|-----------------------------------------|-----------------------------------------|
-| Android  | `POST_NOTIFICATIONS`                    | Show the focus alert                    |
-| Android  | `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM` | Trigger alerts at the exact interval |
-| Android  | `WAKE_LOCK`                             | Wake device for the alert               |
-| Android  | `USE_FULL_SCREEN_INTENT`                | Show over lock screen                   |
-| Android  | `RECEIVE_BOOT_COMPLETED`                | Re-arm scheduled alerts after reboot    |
-| Android  | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`  | Keep timers reliable on aggressive OEMs |
-| iOS      | Notification permission                 | First-launch prompt                     |
+---
 
-## Build & run
+## 📦 Install
+
+### Android (sideload)
+
+1. Download the latest `FocusMate-arm64-vX.Y.Z-release-signed.apk` from
+   [Releases](https://github.com/hellogunawan99/focus-mate/releases/latest)
+2. Transfer to your Android device
+3. **Enable "Install unknown apps"** for your file manager / browser
+   (Settings → Apps → Special access → Install unknown apps)
+4. Open the APK and tap **Install**
+
+> **Note on signing:** v1.0.0–v1.0.5 used the Android debug key. v1.1.0+
+> use a proper release keystore. If you have an older version installed,
+> uninstall it first (signatures don't match).
+
+### iOS
+
+Build from source — see [Build from source](#-build-from-source) below.
+(TestFlight / App Store distribution not yet set up.)
+
+### Permissions
+
+First launch will request:
+- **Notifications** — required for the math challenge alert
+- **Exact alarms** — required for interval-accurate scheduling
+- **Battery optimization exemption** — prevents Android from killing the timer
+
+---
+
+## 🛠️ Build from source
+
+### Prerequisites
+- Flutter 3.44+ (Dart 3.12+)
+- Android SDK 34+ (for Android builds)
+- Xcode 15+ (for iOS builds)
+- Java 17+ (for Android Gradle builds)
+
+### Setup
 
 ```bash
-# Get dependencies
+git clone https://github.com/hellogunawan99/focus-mate.git
+cd focus-mate
 flutter pub get
-
-# Run on a connected device / emulator
-flutter run
-
-# Build a release APK
-flutter build apk --release
-
-# Build a release iOS bundle (macOS only, requires Xcode)
-flutter build ios --release
 ```
 
-## Tests
+### Android
 
 ```bash
-flutter test
+flutter build apk --release --target-platform android-arm64
+# Output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
-## Settings persistence
+### iOS
 
-All user settings are stored in `SharedPreferences`:
+```bash
+cd ios && pod install && cd ..
+flutter build ios --release
+# Then open ios/Runner.xcworkspace in Xcode for device deployment
+```
 
-- `interval_minutes` (int, default 60)
-- `difficulty_tier` (int 1..5, default 3)
-- `focus_mode_enabled` (bool, default false)
-- `sound_enabled` (bool, default true)
-- `vibration_enabled` (bool, default true)
+### Run in debug mode
 
-These persist across app restarts, app updates, and device reboots (the
-scheduled notifications re-arm via the boot receiver on Android).
+```bash
+flutter run                    # picks first connected device
+flutter run -d <device-id>     # specific device
+```
 
-## Math problem difficulty
+### Run tests
 
-| Tier | Label    | Examples                                        |
-|------|----------|-------------------------------------------------|
-| 1    | Easy     | 7×8, 24÷6, 13+27                                |
-| 2    | Normal   | 11×12, 84÷7, 145−89                             |
-| 3    | Moderate | 23×14, 168÷12, 287+453                          |
-| 4    | Hard     | 67×24, 528÷22, 1024−789                         |
-| 5    | Brutal   | 312×86, 4096÷64, 5000−3271                      |
+```bash
+flutter test                   # all unit + widget tests
+flutter test test/math_test.dart  # specific file
+```
 
-The generator rotates through all four operators (+, −, ×, ÷) and division
-is always whole-number by construction (divisor × result is generated first,
-then divided).
+---
 
-## What's NOT done (future work)
+## 🧪 Testing
 
-- Statistics: daily/weekly focus minutes, problems solved, attempts per problem
-- Multiple "challenge sets" (sequence of N problems instead of one)
-- Localized strings (currently English-only)
-- iOS Critical Alert entitlement (requires Apple approval) for sound during Do
-  Not Disturb
+- **Unit tests** for `MathProblemGenerator` (problem difficulty, operator distribution)
+- **Widget tests** for `IntervalWheel` (centering, scroll range, editor behavior, fling-bound clamps)
+- All tests run on every commit via widget test suite
+
+```bash
+$ flutter test
++0: All tests passed!
+```
+
+---
+
+## 🤝 Contributing
+
+This is a personal-use project, but PRs and bug reports are welcome!
+
+### Reporting bugs
+1. Check [Issues](https://github.com/hellogunawan99/focus-mate/issues) first
+2. Open a new issue with:
+   - Device model + Android version
+   - Focus Mate version (Settings → About)
+   - Reproduction steps
+   - Expected vs actual behavior
+
+### Submitting PRs
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/awesome-thing`)
+3. Add tests for new behavior
+4. Run `flutter analyze` + `flutter test` — must pass clean
+5. Open a PR with a clear description
+
+### Code style
+- `flutter analyze` clean
+- Prefer widget tests for any picker/scroll/offset math
+- Document any new design tokens in `lib/core/theme.dart`
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+## 🙏 Credits
+
+- **App icon** — procedurally generated target/aperture mark (custom)
+- **Alarm sound** — procedurally generated C5-E5 sine wave (custom)
+- **Fonts** — [Plus Jakarta Sans](https://fonts.google.com/specimen/Plus+Jakarta+Sans),
+  [JetBrains Mono](https://www.jetbrains.com/lp/mono/) (both open-source)
+- **Built with** — [Flutter](https://flutter.dev), [Dart](https://dart.dev),
+  [Material 3](https://m3.material.io), and a lot of `flutter_local_notifications` debugging
+
+---
+
+<div align="center">
+
+**Focus Mate v1.1.3** · [hellogunawan99](https://github.com/hellogunawan99) · 2026
+
+[⬆ Back to top](#focus-mate)
+
+</div>
