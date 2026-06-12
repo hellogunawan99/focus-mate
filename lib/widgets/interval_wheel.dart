@@ -9,14 +9,17 @@ import '../core/theme.dart';
 /// Drag UP to increase the value, drag DOWN to decrease. Snaps to
 /// integer minutes. Each integer past is a discrete tick that triggers
 /// a light haptic feedback. Includes a tap-to-edit affordance for
-/// precise values outside the typical range.
+/// precise values outside the typical range (e.g. 1-4 minutes for
+/// quick test sessions, or 121-240 minutes for marathon focus blocks).
 ///
 /// Visual: a vertical strip showing ~3 visible numbers (one centered
 /// and large in amber, two smaller and muted above/below).
 class IntervalWheel extends StatefulWidget {
   final int value; // current value in minutes
-  final int min;
-  final int max;
+  final int min; // minimum value shown in the wheel
+  final int max; // maximum value shown in the wheel
+  final int editorMin; // minimum value allowed in the editor dialog
+  final int editorMax; // maximum value allowed in the editor dialog
   final ValueChanged<int> onChanged;
 
   const IntervalWheel({
@@ -25,6 +28,8 @@ class IntervalWheel extends StatefulWidget {
     required this.onChanged,
     this.min = 5,
     this.max = 120,
+    this.editorMin = 1,
+    this.editorMax = 240,
   });
 
   @override
@@ -34,18 +39,26 @@ class IntervalWheel extends StatefulWidget {
 class _IntervalWheelState extends State<IntervalWheel> {
   late ScrollController _controller;
   late int _value;
-  double _itemHeight = 44;
+  final double _itemHeight = 44;
+
+  /// One full "item" of empty space at top and bottom of the list. This
+  /// shifts the visible center line so that an item sits centered (rather
+  /// than the first item being at the top of the wheel).
+  double get _centerPadding => _itemHeight;
 
   @override
   void initState() {
     super.initState();
-    _value = widget.value.clamp(widget.min, widget.max);
+    // Use widget.value as-is (don't clamp to wheel range). If the actual
+    // value is below wheel min or above wheel max, the wheel will still
+    // display the nearest visible value but the underlying value is
+    // preserved (e.g. user typed 3 in editor — wheel centers on 5 but
+    // big number above still shows 3).
+    _value = widget.value;
     _controller = ScrollController();
     _controller.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_controller.hasClients) {
-        _controller.jumpTo((_value - widget.min) * _itemHeight);
-      }
+      _jumpToValue(_value, animated: false);
     });
   }
 
@@ -53,11 +66,8 @@ class _IntervalWheelState extends State<IntervalWheel> {
   void didUpdateWidget(covariant IntervalWheel old) {
     super.didUpdateWidget(old);
     if (old.value != widget.value && widget.value != _value) {
-      final newValue = widget.value.clamp(widget.min, widget.max);
-      _value = newValue;
-      if (_controller.hasClients) {
-        _controller.jumpTo((_value - widget.min) * _itemHeight);
-      }
+      _value = widget.value;
+      _jumpToValue(_value, animated: false);
     }
   }
 
@@ -68,12 +78,51 @@ class _IntervalWheelState extends State<IntervalWheel> {
     super.dispose();
   }
 
+  /// Jump (or animate) so that [value] is centered in the visible wheel.
+  /// If [value] is outside [widget.min, widget.max], snap to the nearest
+  /// end of the wheel.
+  void _jumpToValue(int value, {bool animated = true}) {
+    if (!_controller.hasClients) return;
+    double target;
+    if (value < widget.min) {
+      target = 0;
+    } else if (value > widget.max) {
+      target = (widget.max - widget.min) * _itemHeight;
+    } else {
+      target = (value - widget.min) * _itemHeight;
+    }
+    if (animated) {
+      _controller.animateTo(
+        target,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    } else {
+      _controller.jumpTo(target);
+    }
+  }
+
   void _onScroll() {
     if (!_controller.hasClients) return;
+    // If the current value is outside the wheel's display range
+    // (e.g. user typed 3 in editor, but min is 5), don't try to
+    // update from scroll — just snap the scroll back to nearest.
+    if (_value < widget.min || _value > widget.max) {
+      // Snap to nearest valid value without firing onChanged.
+      final target = _value < widget.min
+          ? 0.0
+          : (widget.max - widget.min) * _itemHeight;
+      if ((_controller.offset - target).abs() > 1.0) {
+        _controller.jumpTo(target);
+      }
+      return;
+    }
     final offset = _controller.offset;
-    final raw = offset / _itemHeight;
-    final idx = raw.round();
-    final newValue = (widget.min + idx).clamp(widget.min, widget.max);
+    // The center of the wheel sits at `_centerPadding` of padding above
+    // the first item. So an offset of `_centerPadding` corresponds to
+    // the first item being centered (= value min).
+    final raw = (offset / _itemHeight).round();
+    final newValue = widget.min + raw;
     if (newValue != _value) {
       setState(() => _value = newValue);
       HapticFeedback.selectionClick();
@@ -82,7 +131,10 @@ class _IntervalWheelState extends State<IntervalWheel> {
   }
 
   Future<void> _openEditor() async {
-    final controller = TextEditingController(text: _value.toString());
+    // Pre-fill with the current value if it's within editor range, else
+    // the editor range's nearest valid bound.
+    final initial = _value.clamp(widget.editorMin, widget.editorMax);
+    final controller = TextEditingController(text: initial.toString());
     final result = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -101,7 +153,8 @@ class _IntervalWheelState extends State<IntervalWheel> {
           decoration: InputDecoration(
             filled: true,
             fillColor: BrandColors.surfaceHigh,
-            hintText: 'minutes (${widget.min}-${widget.max})',
+            hintText:
+                'minutes (${widget.editorMin}-${widget.editorMax})',
             hintStyle: GoogleFonts.plusJakartaSans(
                 color: BrandColors.textMuted.withValues(alpha: 0.5)),
             suffixText: 'min',
@@ -143,12 +196,13 @@ class _IntervalWheelState extends State<IntervalWheel> {
       ),
     );
     if (result != null) {
-      final clamped = result.clamp(widget.min, widget.max);
+      final clamped = result.clamp(widget.editorMin, widget.editorMax);
       setState(() => _value = clamped);
       widget.onChanged(clamped);
-      if (_controller.hasClients) {
-        _controller.jumpTo((clamped - widget.min) * _itemHeight);
-      }
+      // Animate to the new value, even if it's outside the visible wheel
+      // range (5-120). The wheel will clamp the visual scroll position
+      // to its own min/max but the underlying value is preserved.
+      _jumpToValue(_value, animated: true);
     }
   }
 
@@ -230,7 +284,13 @@ class _IntervalWheelState extends State<IntervalWheel> {
                     physics: const BouncingScrollPhysics(),
                     itemCount: widget.max - widget.min + 1,
                     itemExtent: _itemHeight,
-                    padding: EdgeInsets.zero,
+                    // Top + bottom padding equal one item height. This makes
+                    // the first item (value = widget.min) sit at the
+                    // wheel's vertical center, and the rest scroll in from
+                    // above/below. Without this, the first item sits at
+                    // the top and the visible "selected" row at the
+                    // middle is actually value+1.
+                    padding: EdgeInsets.symmetric(vertical: _centerPadding),
                     itemBuilder: (ctx, i) {
                       final value = widget.min + i;
                       final isSelected = value == _value;
