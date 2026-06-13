@@ -42,6 +42,44 @@ void main() {
     expect(selectedTwoForty, findsWidgets);
   });
 
+  testWidgets('IntervalWheel selection band is vertically centered with the selected value',
+      (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: IntervalWheel(
+          value: 79,
+          onChanged: (_) {},
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // The yellow selection band is a Container with the amber-tinted
+    // background (alpha 0.10). Find it via its decoration color.
+    final bandFinder = find.byWidgetPredicate((w) {
+      if (w is! Container) return false;
+      final deco = w.decoration;
+      if (deco is! BoxDecoration) return false;
+      final c = deco.color;
+      return c != null && c.alpha < 50; // alpha 0.10 = ~25/255
+    });
+    expect(bandFinder, findsWidgets);
+    final bandCenter = tester.getCenter(bandFinder.first).dy;
+
+    // Find the selected '79' text widget (rendered with bold + 26px).
+    final selectedText = find.text('79').first;
+    final textCenter = tester.getCenter(selectedText).dy;
+
+    // Band and selected text should be at the same y-position (within
+    // 2 logical pixels to absorb sub-pixel rendering).
+    expect(
+      (bandCenter - textCenter).abs() < 2.0,
+      isTrue,
+      reason: 'Band center ($bandCenter) should align with selected '
+          'text center ($textCenter)',
+    );
+  });
+
   testWidgets('IntervalWheel correctly centers min value (1)',
       (tester) async {
     await tester.pumpWidget(MaterialApp(

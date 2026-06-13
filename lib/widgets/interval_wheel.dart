@@ -274,9 +274,12 @@ class _IntervalWheelState extends State<IntervalWheel> {
                       ),
                     ),
                   ),
-                  // Center selection indicator
+                  // Center selection indicator — top edge at _centerPadding
+                  // so the band sits centered in the Stack (visual center
+                  // at viewport_height / 2 = _centerPadding when
+                  // _centerPadding = viewport_height/2 - _itemHeight/2).
                   Positioned(
-                    top: _itemHeight,
+                    top: _centerPadding,
                     height: _itemHeight,
                     left: 0,
                     right: 0,
