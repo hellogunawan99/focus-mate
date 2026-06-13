@@ -49,10 +49,15 @@ class _IntervalWheelState extends State<IntervalWheel> {
     1, 2, 3, 5, 10, 15, 20, 25, 30, 45, 60, 90, 120, 180, 240,
   };
 
-  /// One full "item" of empty space at top and bottom of the list. This
-  /// shifts the visible center line so that an item sits centered (rather
-  /// than the first item being at the top of the wheel).
-  double get _centerPadding => _itemHeight;
+  /// Top + bottom padding for the ListView, sized so that the first
+  /// item (value = widget.min) lands centered in the visible wheel area
+  /// at scroll offset 0. The math:
+  ///   viewport_height = _itemHeight * 5  (= 150 for default settings)
+  ///   we want first item middle at viewport-y = viewport_height / 2
+  ///   first item middle (in content coords) = padding + _itemHeight/2
+  ///   so padding = viewport_height/2 - _itemHeight/2 = _itemHeight * 2
+  /// Verified with widget tests (see test/interval_wheel_test.dart).
+  double get _centerPadding => _itemHeight * 2;
 
   @override
   void initState() {
